@@ -26,18 +26,43 @@ char diskfile_path[PATH_MAX];
 
 // Declare your in-memory data structures here
 
+//Inode Bitmap
+bitmap_t inodeBitmap;
+//Data Block Bitmap
+bitmap_t dataBlockBitmap;
+//Super Block
+struct superblock* superBlock;
+
+
 /* 
  * Get available inode number from bitmap
  */
 int get_avail_ino() {
-
+	bitmap_t inodeBit = malloc(BLOCK_SIZE);
 	// Step 1: Read inode bitmap from disk
-	
+	if(bio_read(1,inodeBit) < 0){
+		free(inodeBit);
+		printf("Inode Bitmap Read Error");
+	}
+	int num = -1;
 	// Step 2: Traverse inode bitmap to find an available slot
-
+	for(int i = 0; i< MAX_INUM/8;i++){
+		for(int j = 0; j<8;j++){
+			if(!(inodeBit[i] & (1 << j))){
+				num = i*8 + j;
+				set_bitmap(inodeBit,num);
+				break;
+			}
+		}
+		if(num != -1){
+				break;
+			}
+	}
+	bio_write(1,inodeBit);
+	free(inodeBit);
 	// Step 3: Update inode bitmap and write to disk 
 
-	return 0;
+	return num;
 }
 
 /* 
@@ -46,12 +71,31 @@ int get_avail_ino() {
 int get_avail_blkno() {
 
 	// Step 1: Read data block bitmap from disk
-	
-	// Step 2: Traverse data block bitmap to find an available slot
+	bitmap_t dataBit = malloc(BLOCK_SIZE);
+	if(bio_read(2,dataBit) < 0){
+		free(dataBit);
+		printf("Data Bitmap Read Error");
+	}
+	int num = -1;
 
+	// Step 2: Traverse data block bitmap to find an available slot
+	for(int i = 0; i< MAX_DNUM/8;i++){
+		for(int j = 0; j<8;j++){
+			if(!(dataBit[i] & (1 << j))){
+				num = i*8 + j;
+				set_bitmap(dataBit,num);
+				break;
+			}
+		}
+		if(num != -1){
+				break;
+			}
+	}
+	bio_write(2,dataBit);
+	free(dataBit);
 	// Step 3: Update data block bitmap and write to disk 
 
-	return 0;
+	return num;
 }
 
 /* 
@@ -140,13 +184,34 @@ int get_node_by_path(const char *path, uint16_t ino, struct inode *inode) {
 int rufs_mkfs() {
 
 	// Call dev_init() to initialize (Create) Diskfile
+	dev_init(diskfile_path);
 
 	// write superblock information
-
+	superBlock = malloc(sizeof(struct superblock));
+	superBlock->magic_num = MAGIC_NUM;
+	superBlock->max_dnum = MAX_DNUM;
+	superBlock->max_inum = MAX_INUM;
+	superBlock->i_bitmap_blk = 1;
+	superBlock->d_bitmap_blk = 2;
+	superBlock->i_start_blk = 3;
+	superBlock->d_start_blk = (MAX_INUM*sizeof(struct inode))/BLOCK_SIZE + 3;
+	if(bio_write(0, (void *)superBlock) < 0){
+		printf("SuperBlock Write Failed");
+	}
 	// initialize inode bitmap
-
+	int inoSize = (MAX_INUM/8);
+	inodeBitmap = (bitmap_t)malloc(inoSize*sizeof(unsigned char));
+	memset(inodeBitmap, 0, inoSize);
+	if(bio_write(1,(void *)inodeBitmap) < 0){
+		printf("Inode Bitmap Write Failed");
+	}
 	// initialize data block bitmap
-
+	int dbSize = (MAX_DNUM/8);
+	dataBlockBitmap = (bitmap_t)malloc(dbSize*sizeof(unsigned char));
+	memset(dataBlockBitmap, 0, dbSize);
+	if(bio_write(2,(void *)dataBlockBitmap) < 0){
+		printf("Data Block Bitmap Write Failed");
+	}
 	// update bitmap information for root directory
 
 	// update inode for root directory
@@ -161,6 +226,15 @@ int rufs_mkfs() {
 static void *rufs_init(struct fuse_conn_info *conn) {
 
 	// Step 1a: If disk file is not found, call mkfs
+	int fd = open(diskfile_path, O_RDWR);
+	if(fd < 0){
+		rufs_mkfs();
+	}else{
+		//1b
+		if(bio_read(0,superBlock) != 0){
+			printf("Super Block could not be read!");
+		//Data Structures Here
+	}
 
   // Step 1b: If disk file is found, just initialize in-memory data structures
   // and read superblock from disk
@@ -376,4 +450,6 @@ int main(int argc, char *argv[]) {
 
 	return fuse_stat;
 }
+
+
 
