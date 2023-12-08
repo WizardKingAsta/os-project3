@@ -26,15 +26,34 @@ char diskfile_path[PATH_MAX];
 
 // Declare your in-memory data structures here
 
+//Inode Bitmap
+bitmap_t inodeBitmap;
+//Data Block Bitmap
+bitmap_t* dataBlockBitmap;
+
+//Multi-Level-Indexing
+
 /* 
  * Get available inode number from bitmap
  */
 int get_avail_ino() {
-
+	void *inodeBit;
 	// Step 1: Read inode bitmap from disk
-	
+	bio_read(1,inodeBit);
+	int num;
+	inodeBitmap = (bitmap_t)inodeBit;
 	// Step 2: Traverse inode bitmap to find an available slot
+	for(int i = 0; i< MAX_INUM/8;i++){
+		for(int j = 0; j<8;j++){
+			if(inodeBitmap[i] & (1 << j)){
 
+			}else{
+				num = i*8 + j;
+				set_bitmap(inodeBitmap,num);
+				return num;
+			}
+		}
+	}
 	// Step 3: Update inode bitmap and write to disk 
 
 	return 0;
@@ -140,12 +159,15 @@ int get_node_by_path(const char *path, uint16_t ino, struct inode *inode) {
 int rufs_mkfs() {
 
 	// Call dev_init() to initialize (Create) Diskfile
+	dev_init(diskfile_path);
 
 	// write superblock information
-
+	
 	// initialize inode bitmap
+	inodeBitmap = (bitmap_t)malloc((MAX_INUM/8)* sizeof(unsigned char));
 
 	// initialize data block bitmap
+	dataBlockBitmap = (bitmap_t)malloc((MAX_DNUM/8)*sizeof(unsigned char));
 
 	// update bitmap information for root directory
 
