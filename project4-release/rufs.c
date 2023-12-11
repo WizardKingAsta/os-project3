@@ -40,6 +40,7 @@ int super_num = 0;
 int ino_bit_num = 1;
 int db_bit_num = 2;
 int ino_start = 3;
+int inodes_per_block = BLOCK_SIZE/sizeof(struct inode);
 
 
 /* 
@@ -112,22 +113,31 @@ int get_avail_blkno() {
 int readi(uint16_t ino, struct inode *inode) {
 
   // Step 1: Get the inode's on-disk block number
-
+	int block = ino/inodes_per_block;
+	block += ino_start;
   // Step 2: Get offset of the inode in the inode on-disk block
-
+	uint16_t offset = (ino%inodes_per_block)*sizeof(struct inode);
   // Step 3: Read the block from disk and then copy into inode structure
-
+    void* tmp = malloc(BLOCK_SIZE);
+	bio_read(block,tmp);
+	memcpy(inode, tmp+offset,sizeof(struct inode));
+	free(tmp);
 	return 0;
 }
 
 int writei(uint16_t ino, struct inode *inode) {
 
 	// Step 1: Get the block number where this inode resides on disk
-	int block;
+	int block = ino/inodes_per_block;
+	block += ino_start;
 	// Step 2: Get the offset in the block where this inode resides on disk
-
+	uint16_t offset = (ino%inodes_per_block)*sizeof(struct inode);
 	// Step 3: Write inode to disk 
-
+	void* tmp = malloc(BLOCK_SIZE);
+	bio_read(block,tmp);
+	memcpy(tmp+offset, inode, sizeof(struct inode));
+	bio_write(block,tmp);
+	free(tmp);
 	return 0;
 }
 
@@ -138,29 +148,82 @@ int writei(uint16_t ino, struct inode *inode) {
 int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *dirent) {
 
   // Step 1: Call readi() to get the inode using ino (inode number of current directory)
-
+  struct inode *dir_inode = (struct inode*)malloc(sizeof(struct inode));
+  readi(ino, dir_inode);
   // Step 2: Get data block of current directory from inode
-
+	int block = dir_inode->direct_ptr[0];
+	void* buf = malloc(BLOCK_SIZE);
+	bio_read(block,buf);
   // Step 3: Read directory's data block and check each directory entry.
   //If the name matches, then copy directory entry to dirent structure
-
-	return 0;
+  struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
+	for(int i = 0; i< BLOCK_SIZE/sizeof(dirent);i++){
+		memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
+		if(strcmp(tmp->name,fname)==0 && tmp->valid == 1){
+			memcpy(dirent,tmp,sizeof(struct dirent));
+			free(tmp);
+			free(buf);
+			free(dir_inode);
+			return 0;
+		}
+	}
+	free(tmp);
+	free(buf);
+	free(dir_inode);
+	return -1;
 }
 
 int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t name_len) {
 
 	// Step 1: Read dir_inode's data block and check each directory entry of dir_inode
-	
+	int block = dir_inode.direct_ptr[0];
+	void* buf = malloc(BLOCK_SIZE);
+	bio_read(block,buf);
+
 	// Step 2: Check if fname (directory name) is already used in other entries
-
+	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
+	for(int i = 0; i< dir_inode.size/sizeof(struct dirent);i++){
+		memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
+	
+		if(tmp->valid == 1 && strcmp(tmp->name,fname)==0 ){
+			perror("dir already exists!");
+			free(tmp);
+			free(buf);
+			return -1;
+		}
+	}
 	// Step 3: Add directory entry in dir_inode's data block and write to disk
-
+	struct dirent *dir_ent = (struct dirent*)malloc(sizeof(struct dirent));
+	dir_ent->ino = f_ino;
+	strcpy(dir_ent->name,fname);
+	dir_ent->len = name_len;
+	dir_ent->valid = 1;
 	// Allocate a new data block for this directory if it does not exist
-
+   if(dir_inode.size== BLOCK_SIZE){
+		int db = get_avail_blkno();
+		if(db <0){
+			perror("block allocation failed!");
+		}else{
+			bio_read(db,buf);
+			for(int b = 0; b <16; b++){
+				if(dir_inode.direct_ptr[b] == 0){
+					dir_inode.direct_ptr[b] = db;
+				}
+			}
+		}
+   }else{
+		buf = buf+dir_inode.size;
+   }
 	// Update directory inode
-
+	//add something to edit inode modification time
+	dir_inode.size += sizeof(struct dirent);
+	dir_inode.link+= 1;
+	bio_write(dir_inode.ino,&dir_inode);
 	// Write directory entry
-
+	memcpy(buf,dir_ent,sizeof(struct dirent));
+	free(tmp);
+	free(dir_ent);
+	free(buf);
 	return 0;
 }
 
