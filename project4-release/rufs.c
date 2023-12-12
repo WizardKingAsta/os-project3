@@ -176,15 +176,22 @@ int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *di
 int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t name_len) {
 
 	// Step 1: Read dir_inode's data block and check each directory entry of dir_inode
-	int block = dir_inode.direct_ptr[0];
+	int num_blocks = dir_inode.size/BLOCK_SIZE;
+	int block;
 	void* buf = malloc(BLOCK_SIZE);
-	bio_read(block,buf);
+	int free_ent = -1;
 
 	// Step 2: Check if fname (directory name) is already used in other entries
 	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
+	for(int b = 0; b<num_blocks;b++){
+		int block = dir_inode.direct_ptr[b];
+		bio_read(block,buf);
 	for(int i = 0; i< dir_inode.size/sizeof(struct dirent);i++){
 		memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
-	
+		if(tmp->valid == 0){
+			free_ent = i;
+			break;
+		}
 		if(tmp->valid == 1 && strcmp(tmp->name,fname)==0 ){
 			perror("dir already exists!");
 			free(tmp);
@@ -192,35 +199,40 @@ int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t na
 			return -1;
 		}
 	}
+	}
 	// Step 3: Add directory entry in dir_inode's data block and write to disk
 	struct dirent *dir_ent = (struct dirent*)malloc(sizeof(struct dirent));
 	dir_ent->ino = f_ino;
 	strcpy(dir_ent->name,fname);
 	dir_ent->len = name_len;
 	dir_ent->valid = 1;
+
 	// Allocate a new data block for this directory if it does not exist
-   if(dir_inode.size== BLOCK_SIZE){
-		int db = get_avail_blkno();
-		if(db <0){
+   if(free_ent == -1){
+		int block = get_avail_blkno();
+		if(block <0){
 			perror("block allocation failed!");
 		}else{
-			bio_read(db,buf);
+			bio_read(block,buf);
 			for(int b = 0; b <16; b++){
 				if(dir_inode.direct_ptr[b] == 0){
-					dir_inode.direct_ptr[b] = db;
+					dir_inode.direct_ptr[b] = block;
+					break;
 				}
 			}
+			free_ent = 0;
 		}
-   }else{
-		buf = buf+dir_inode.size;
    }
+
 	// Update directory inode
 	//add something to edit inode modification time
 	dir_inode.size += sizeof(struct dirent);
 	dir_inode.link+= 1;
 	bio_write(dir_inode.ino,&dir_inode);
+	
 	// Write directory entry
-	memcpy(buf,dir_ent,sizeof(struct dirent));
+	memcpy(buf+(free_ent*sizeof(struct dirent)),dir_ent,sizeof(struct dirent));
+	bio_write(block,buf);
 	free(tmp);
 	free(dir_ent);
 	free(buf);
@@ -230,12 +242,40 @@ int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t na
 int dir_remove(struct inode dir_inode, const char *fname, size_t name_len) {
 
 	// Step 1: Read dir_inode's data block and checks each directory entry of dir_inode
-	
+	int num_blocks = dir_inode.size/BLOCK_SIZE;
+
+	int block;
+	void* buf = malloc(BLOCK_SIZE);
+	int entry_num = -1;
+
+	// Step 2: Check if fname (directory name) is already used in other entries
+	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
+	for(int b = 0; b<num_blocks; b++){
+		int block = dir_inode.direct_ptr[b];
+		bio_read(block,buf);
+	for(int i = 0; i< dir_inode.size/sizeof(struct dirent);i++){
+		memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
+		if(tmp->valid == 1 && strcmp(tmp->name,fname)==0 ){
+			entry_num = i;
+			break;
+		}
+	}
+	}
 	// Step 2: Check if fname exist
-
 	// Step 3: If exist, then remove it from dir_inode's data block and write to disk
-
-	return 0;
+	if(entry_num !=-1){
+		tmp->valid = 0;
+		bio_write(block,buf);
+		dir_inode.size -= sizeof(struct dirent);
+		dir_inode.link -=1;
+		//edit dir_inode mod time
+		free(tmp);
+		free(buf);
+		return 0;
+	}
+	free(tmp);
+	free(buf);
+	return -1;
 }
 
 /* 
@@ -245,6 +285,7 @@ int get_node_by_path(const char *path, uint16_t ino, struct inode *inode) {
 	
 	// Step 1: Resolve the path name, walk through path, and finally, find its inode.
 	// Note: You could either implement it in a iterative way or recursive way
+	
 
 	return 0;
 }
@@ -550,3 +591,13 @@ int main(int argc, char *argv[]) {
 	return fuse_stat;
 }
 
+/*
+make
+mkdir -p /tmp/mc2432/mountdir
+./rufs -s /tmp/mc2432/mountdir
+
+cd benchark
+make
+./simple_test
+
+*/
