@@ -237,6 +237,7 @@ int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t na
 	//add something to edit inode modification time
 	dir_inode.size += sizeof(struct dirent);
 	dir_inode.link+= 1;
+	writei(dir_inode.ino,&dir_inode);
 	bio_write(dir_inode.ino,&dir_inode);
 	
 	// Write directory entry
@@ -285,6 +286,7 @@ int dir_remove(struct inode dir_inode, const char *fname, size_t name_len) {
 		dir_inode.link -=1;
 		//edit dir_inode mod time
 		writei(dir_inode.ino,&dir_inode);
+		bio_write(dir_inode.ino,&dir_inode);
 		free(tmp);
 		free(buf);
 		return 0;
