@@ -176,14 +176,16 @@ int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *di
 int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t name_len) {
 
 	// Step 1: Read dir_inode's data block and check each directory entry of dir_inode
-	int num_blocks = dir_inode.size/BLOCK_SIZE;
 	int block;
 	void* buf = malloc(BLOCK_SIZE);
 	int free_ent = -1;
 
 	// Step 2: Check if fname (directory name) is already used in other entries
 	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
-	for(int b = 0; b<num_blocks;b++){
+	for(int b = 0; b<16;b++){
+		if(dir_inode.direct_ptr[b] == 0){
+		break;
+	}
 		int block = dir_inode.direct_ptr[b];
 		bio_read(block,buf);
 	for(int i = 0; i< dir_inode.size/sizeof(struct dirent);i++){
@@ -242,7 +244,6 @@ int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t na
 int dir_remove(struct inode dir_inode, const char *fname, size_t name_len) {
 
 	// Step 1: Read dir_inode's data block and checks each directory entry of dir_inode
-	int num_blocks = dir_inode.size/BLOCK_SIZE;
 
 	int block;
 	void* buf = malloc(BLOCK_SIZE);
@@ -250,8 +251,11 @@ int dir_remove(struct inode dir_inode, const char *fname, size_t name_len) {
 
 	// Step 2: Check if fname (directory name) is already used in other entries
 	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
-	for(int b = 0; b<num_blocks; b++){
-		int block = dir_inode.direct_ptr[b];
+	for(int b = 0; b<16; b++){
+		if(dir_inode.direct_ptr[b] == 0){
+		break;
+	}
+		block = dir_inode.direct_ptr[b];
 		bio_read(block,buf);
 	for(int i = 0; i< dir_inode.size/sizeof(struct dirent);i++){
 		memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
@@ -260,19 +264,25 @@ int dir_remove(struct inode dir_inode, const char *fname, size_t name_len) {
 			break;
 		}
 	}
+	if(entry_num != -1){
+		break;
+	}
 	}
 	// Step 2: Check if fname exist
 	// Step 3: If exist, then remove it from dir_inode's data block and write to disk
 	if(entry_num !=-1){
 		tmp->valid = 0;
+		memcpy(buf+(entry_num*sizeof(struct dirent)),tmp,sizeof(struct dirent));
 		bio_write(block,buf);
 		dir_inode.size -= sizeof(struct dirent);
 		dir_inode.link -=1;
 		//edit dir_inode mod time
+		writei(dir_inode.ino,&dir_inode);
 		free(tmp);
 		free(buf);
 		return 0;
 	}
+	printf("Entry Not Found!");
 	free(tmp);
 	free(buf);
 	return -1;
