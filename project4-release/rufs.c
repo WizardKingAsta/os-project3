@@ -490,11 +490,15 @@ static void rufs_destroy(void *userdata) {
 static int rufs_getattr(const char *path, struct stat *stbuf) {
 
 	// Step 1: call get_node_by_path() to get inode from path
-
+	struct inode *inode = (struct inode*)malloc(sizeof(struct inode));
+	if(get_node_by_path(path, inode->ino,inode) < 0){
+		printf("Error: getting path");
+	}
 	// Step 2: fill attribute of file into stbuf from inode
 
 		stbuf->st_mode   = S_IFDIR | 0755;
-		stbuf->st_nlink  = 2;
+		stbuf->st_nlink  = inode->link;
+		stbuf->st_size   = inode->size;
 		time(&stbuf->st_mtime);
 
 	return 0;
@@ -522,9 +526,11 @@ static int rufs_readdir(const char *path, void *buffer, fuse_fill_dir_t filler, 
 static int rufs_mkdir(const char *path, mode_t mode) {
 
 	// Step 1: Use dirname() and basename() to separate parent directory path and target directory name
+	const char *dirPath = dirname(path);
+	const char *baseName = basename(path);
 
 	// Step 2: Call get_node_by_path() to get inode of parent directory
-
+	
 	// Step 3: Call get_avail_ino() to get an available inode number
 
 	// Step 4: Call dir_add() to add directory entry of target directory to parent directory
