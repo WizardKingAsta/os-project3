@@ -42,6 +42,7 @@ int ino_bit_num = 1;
 int db_bit_num = 2;
 int ino_start = 3;
 int inodes_per_block = BLOCK_SIZE/sizeof(struct inode);
+int root_ino = 0;
 
 
 /* 
@@ -120,6 +121,10 @@ int get_avail_blkno() {
 int readi(uint16_t ino, struct inode *inode) {
 
   // Step 1: Get the inode's on-disk block number
+  if(ino > MAX_INUM){
+	printf("ERROR: Inode out of range");
+	return -1;
+  }
 	int block = ino/inodes_per_block;
 	block += ino_start;
   // Step 2: Get offset of the inode in the inode on-disk block
@@ -135,6 +140,10 @@ int readi(uint16_t ino, struct inode *inode) {
 int writei(uint16_t ino, struct inode *inode) {
 
 	// Step 1: Get the block number where this inode resides on disk
+	if(ino > MAX_INUM){
+	printf("ERROR: Inode out of range");
+	return -1;
+  }
 	int block = ino/inodes_per_block;
 	block += ino_start;
 	// Step 2: Get the offset in the block where this inode resides on disk
@@ -158,12 +167,21 @@ int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *di
   struct inode *dir_inode = (struct inode*)malloc(sizeof(struct inode));
   readi(ino, dir_inode);
   // Step 2: Get data block of current directory from inode
-	int block = dir_inode->direct_ptr[0];
+	int block;
 	void* buf = malloc(BLOCK_SIZE);
-	bio_read(block,buf);
+	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
   // Step 3: Read directory's data block and check each directory entry.
   //If the name matches, then copy directory entry to dirent structure
-  struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
+
+  for(int b = 0; b<16; b++){
+	if(dir_inode->direct_ptr[b] == 0){
+		printf("ERROR: End of directory or empty dir");
+		free(buf);
+		free(tmp);
+		return -1;
+	}
+
+	bio_read(block,buf);
 	for(int i = 0; i< BLOCK_SIZE/sizeof(dirent);i++){
 		memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
 		if(strcmp(tmp->name,fname)==0 && tmp->valid == 1){
@@ -174,6 +192,7 @@ int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *di
 			return 0;
 		}
 	}
+  }
 	free(tmp);
 	free(buf);
 	free(dir_inode);
@@ -238,7 +257,6 @@ int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t na
 	dir_inode.size += sizeof(struct dirent);
 	dir_inode.link+= 1;
 	writei(dir_inode.ino,&dir_inode);
-	bio_write(dir_inode.ino,&dir_inode);
 	
 	// Write directory entry
 	memcpy(buf+(free_ent*sizeof(struct dirent)),dir_ent,sizeof(struct dirent));
@@ -286,7 +304,6 @@ int dir_remove(struct inode dir_inode, const char *fname, size_t name_len) {
 		dir_inode.link -=1;
 		//edit dir_inode mod time
 		writei(dir_inode.ino,&dir_inode);
-		bio_write(dir_inode.ino,&dir_inode);
 		free(tmp);
 		free(buf);
 		return 0;
@@ -304,11 +321,57 @@ int get_node_by_path(const char *path, uint16_t ino, struct inode *inode) {
 	
 	// Step 1: Resolve the path name, walk through path, and finally, find its inode.
 	// Note: You could either implement it in a iterative way or recursive way
-	
+	if(path[0] == '\0'){
+		printf("ERROR: empty path!!");
+		return -1;
+	}
+    char delim[] = "/"; // Delimiter to split the path
+	char *paths = (char *)malloc(sizeof(path));
+	char *saveptr;
+    char *token = strtok_r(paths, delim,&saveptr);
 
+	readi(root_ino,inode);
+	int foundFlag = 0;
+
+	//buffer to read the data blocks associated with inode
+	void* buf = malloc(BLOCK_SIZE);
+	//temporary to read directory entries from data blocks
+	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
+    while (token != NULL) {
+		foundFlag = 0;
+		//CODE TO SEARCH THROUGH ALL DATA BLOCKS OS THE INODE
+
+		for(int b = 0; b<16;b++){//loop to go through all data block pointers in inode
+			if(inode->direct_ptr[b] == 0){
+			printf("ERROR: file section not found");
+			free(tmp);
+			free(buf);
+			return -1;
+		}
+		
+		int block = inode->direct_ptr[b];
+		bio_read(block,buf);
+		for(int i = 0; i< inode->size/sizeof(struct dirent);i++){
+			memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
+			if(tmp->valid == 1 && strcmp(tmp->name,token)==0 ){//if name match, then reads that directory entires inode to inode structure being used
+				readi(tmp->ino,inode);
+				foundFlag = 1;
+				break;
+			}
+		}
+
+		if(foundFlag == 1){
+			free(tmp);
+			free(buf);
+			break;
+		}
+
+		}
+        token = strtok_r(NULL, delim,&saveptr);
+    }
+	
 	return 0;
 }
-
 /* 
  * Make file system
  */
@@ -351,7 +414,7 @@ int rufs_mkfs() {
 	printf("all writes successes!");
 	// initialize root directory
 	struct inode *root = (struct inode*)malloc(sizeof(struct inode));
-	root->ino = 0;
+	root->ino = root_ino;
 	root->valid = 1;
 	root->size = BLOCK_SIZE;
 	root->type = DIR_TYPE;
@@ -361,6 +424,13 @@ int rufs_mkfs() {
 	void* dirBlock = malloc(BLOCK_SIZE);
 	bio_read(block,dirBlock);
 	root->direct_ptr[0] = block;
+
+
+
+//SET UP ROOT DIRECTORY ENTRIES NEEDED HERE
+
+	dir_add(*root, root_ino, ".", 1);
+	dir_add(*root, root_ino, "..", 2);
 
 	// update bitmap information for root directory
 	bitmap_t inodeBit = malloc(BLOCK_SIZE);
@@ -620,6 +690,9 @@ int main(int argc, char *argv[]) {
 
 
 /*
+
+TO START
+
 make
 mkdir -p /tmp/mc2432/mountdir
 ./rufs -s /tmp/mc2432/mountdir
@@ -627,5 +700,8 @@ mkdir -p /tmp/mc2432/mountdir
 cd benchark
 make
 ./simple_test
+
+TO UNMOUNT AND BEGIN AGAIN
+fusermount -u /tmp/mc2432/mountdir
 
 */
