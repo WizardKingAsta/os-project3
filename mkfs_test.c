@@ -9,6 +9,16 @@
 #define TESTDIR "/tmp/mc2432/mountdir"
 
 int main() {
+    char buffer[256];  // Assuming a reasonable maximum path length
+    if (getcwd(buffer, sizeof(buffer)) != NULL)
+    {
+        printf("Current working directory: %s\n", buffer);
+    }
+    else
+    {
+        perror("getcwd");
+    }
+
     // Remove existing diskfile to simulate first-time setup
     unlink(DISKFILE_PATH);
 

@@ -1,0 +1,8 @@
+*.o
+*.out
+*.exe
+rufs
+simple_test
+test_case
+
+mkfs_test

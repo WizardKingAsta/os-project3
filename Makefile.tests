@@ -1,0 +1,16 @@
+CC=gcc
+CFLAGS=-g -Wall -D_FILE_OFFSET_BITS=64
+LDFLAGS=-lfuse
+
+OBJ=mkfs_test.o
+
+%.o: %.c
+	$(CC) -c $(CFLAGS) $< -o $@
+
+mkfs_test: $(OBJ)
+	$(CC) $(OBJ) $(LDFLAGS) -o mkfs_test
+
+.PHONY: clean
+clean:
+	rm -f *.o mkfs_test
+

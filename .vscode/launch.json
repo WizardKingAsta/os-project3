@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "simple test",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/benchmark/simple_test",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "buildBenchmarks",
+      "MIMode": "gdb",
+    },
+    {
+      "name": "test cases",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/benchmark/test_case",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "buildBenchmarks",
+      "MIMode": "gdb",
+    },
+    {
+      "name": "mkfs test",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/mkfs_test",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "buildTests",
+      "MIMode": "gdb",
+    },
+  ]
+}
