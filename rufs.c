@@ -44,6 +44,23 @@ int ino_start = 3;
 int inodes_per_block = BLOCK_SIZE/sizeof(struct inode);
 int root_ino = 0;
 
+/*
+ * bitmap operations
+ */
+void set_bitmap(bitmap_t b, int i)
+{
+    b[i / 8] |= 1 << (i & 7);
+}
+
+void unset_bitmap(bitmap_t b, int i)
+{
+    b[i / 8] &= ~(1 << (i & 7));
+}
+
+uint8_t get_bitmap(bitmap_t b, int i)
+{
+    return b[i / 8] & (1 << (i & 7)) ? 1 : 0;
+}
 
 /* 
  * Get available inode number from bitmap
@@ -676,17 +693,23 @@ static struct fuse_operations rufs_ope = {
 	.release	= rufs_release
 };
 
+int run_rufs(int argc, char *argv[])
+{
+    int fuse_stat;
 
-int main(int argc, char *argv[]) {
-	int fuse_stat;
+    getcwd(diskfile_path, PATH_MAX);
+    strcat(diskfile_path, "/DISKFILE");
 
-	getcwd(diskfile_path, PATH_MAX);
-	strcat(diskfile_path, "/DISKFILE");
+    fuse_stat = fuse_main(argc, argv, &rufs_ope, NULL);
 
-	fuse_stat = fuse_main(argc, argv, &rufs_ope, NULL);
-
-	return fuse_stat;
+    return fuse_stat;
 }
+
+#ifndef RUFS_MAIN
+int main(int argc, char *argv[]) {
+    return run_rufs(argc, argv);
+}
+#endif
 
 
 /*

@@ -2,15 +2,27 @@ CC=gcc
 CFLAGS=-g -Wall -D_FILE_OFFSET_BITS=64
 LDFLAGS=-lfuse
 
-OBJ=mkfs_test.o
+# Target to build everything
+all: mkfs_test
 
-%.o: %.c
-	$(CC) -c $(CFLAGS) $< -o $@
+# Object files for rufs
+rufs.o: rufs.c
+	$(CC) $(CFLAGS) -DRUFS_MAIN -c rufs.c -o rufs.o
 
+block.o: block.c
+	$(CC) $(CFLAGS) -c block.c -o block.o
+
+# Object files for mkfs_test
+mkfs_test.o: mkfs_test.c
+	$(CC) $(CFLAGS) -c mkfs_test.c -o mkfs_test.o
+
+# List of all object files
+OBJ=rufs.o block.o mkfs_test.o
+
+# Target to build mkfs_test
 mkfs_test: $(OBJ)
 	$(CC) $(OBJ) $(LDFLAGS) -o mkfs_test
 
 .PHONY: clean
 clean:
 	rm -f *.o mkfs_test
-

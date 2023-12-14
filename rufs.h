@@ -10,6 +10,26 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* 
+ * Moved these includes to the header file so that test programs
+ * can use run_rufs to simulate running rufs from the command line.
+ * This still allows rufs to be compiled with the original Makefile 
+ * and function as intended.
+*/
+#include <fuse.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <sys/time.h>
+#include <libgen.h>
+#include <limits.h>
+#include "block.h"
+
+
 #ifndef _TFS_H
 #define _TFS_H
 
@@ -52,16 +72,42 @@ struct dirent {
  */
 typedef unsigned char* bitmap_t;
 
-void set_bitmap(bitmap_t b, int i) {
-    b[i / 8] |= 1 << (i & 7);
-}
+void set_bitmap(bitmap_t b, int i);
+void unset_bitmap(bitmap_t b, int i);
+uint8_t get_bitmap(bitmap_t b, int i);
 
-void unset_bitmap(bitmap_t b, int i) {
-    b[i / 8] &= ~(1 << (i & 7));
-}
 
-uint8_t get_bitmap(bitmap_t b, int i) {
-    return b[i / 8] & (1 << (i & 7)) ? 1 : 0;
-}
+int get_avail_ino();
+int get_avail_blkno();
+int readi(uint16_t ino, struct inode *inode);
+int writei(uint16_t ino, struct inode *inode);
+int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *dirent);
+int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t name_len);
+int dir_remove(struct inode dir_inode, const char *fname, size_t name_len);
+int get_node_by_path(const char *path, uint16_t ino, struct inode *inode);
+int rufs_mkfs();
+
+static void *rufs_init(struct fuse_conn_info *conn);
+static void rufs_destroy(void *userdata);
+static int rufs_getattr(const char *path, struct stat *stbuf);
+static int rufs_opendir(const char *path, struct fuse_file_info *fi);
+static int rufs_readdir(const char *path, void *buffer, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi);
+static int rufs_mkdir(const char *path, mode_t mode);
+static int rufs_rmdir(const char *path);
+static int rufs_releasedir(const char *path, struct fuse_file_info *fi);
+static int rufs_create(const char *path, mode_t mode, struct fuse_file_info *fi);
+static int rufs_open(const char *path, struct fuse_file_info *fi);
+static int rufs_read(const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi);
+static int rufs_write(const char *path, const char *buffer, size_t size, off_t offset, struct fuse_file_info *fi);
+static int rufs_unlink(const char *path);
+
+
+static int rufs_truncate(const char *path, off_t size);
+static int rufs_release(const char *path, struct fuse_file_info *fi);
+static int rufs_flush(const char * path, struct fuse_file_info * fi);
+static int rufs_utimens(const char *path, const struct timespec tv[2]);
+
+
+int run_rufs(int argc, char *argv[]);
 
 #endif
