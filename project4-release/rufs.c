@@ -155,7 +155,6 @@ int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *di
   readi(ino, dir_inode);
   // Step 2: Get data block of current directory from inode
 	
-	int block;
 	void* buf = malloc(BLOCK_SIZE);
 	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
   // Step 3: Read directory's data block and check each directory entry.
@@ -169,7 +168,7 @@ int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *di
 		return -1;
 	}
 
-	bio_read(block,buf);
+	bio_read(dir_inode->direct_ptr[b],buf);
 	for(int i = 0; i< BLOCK_SIZE/sizeof(dirent);i++){
 		memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
 		if(strcmp(tmp->name,fname)==0 && tmp->valid == 1){
@@ -190,7 +189,6 @@ int dir_find(uint16_t ino, const char *fname, size_t name_len, struct dirent *di
 int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t name_len) {
 
 	// Step 1: Read dir_inode's data block and check each directory entry of dir_inode
-	int block;
 
 	// Step 2: Check if fname (directory name) is already used in other entries
 	struct dirent *tmp = (struct dirent*)malloc(sizeof(struct dirent));
@@ -198,7 +196,7 @@ int dir_add(struct inode dir_inode, uint16_t f_ino, const char *fname, size_t na
 		if(dir_inode.direct_ptr[b] == 0){
 		break;
 	}
-		int block = dir_inode.direct_ptr[b];
+
 		bio_read(dir_inode.direct_ptr[b],tmp);
 	for(int i = 0; i< BLOCK_SIZE/sizeof(struct dirent);i++){
 		
@@ -340,35 +338,6 @@ int get_node_by_path(const char *path, uint16_t ino, struct inode *inode) {
 	}
 	readi(tmp->ino,inode);
 	
-		/*for(int b = 0; b<16;b++){//loop to go through all data block pointers in inode
-			if(inode->direct_ptr[b] == 0){
-			printf("ERROR: file section not found");
-			free(tmp);
-			free(buf);
-			return -1;
-		}
-		
-		int block = inode->direct_ptr[b];
-		bio_read(block,buf);
-		for(int i = 0; i< inode->size/sizeof(struct dirent);i++){
-			memcpy(tmp,buf+(i*sizeof(struct dirent)),sizeof(struct dirent));
-			if(tmp->valid == 1 && strcmp(tmp->name,token)==0 ){//if name match, then reads that directory entires inode to inode structure being used
-				readi(tmp->ino,inode);
-				foundFlag = 1;
-				break;
-			}
-		}
-
-		if(foundFlag == 1){
-			free(tmp);
-			free(buf);
-			break;
-		}
-
-		}
-        token = strtok_r(NULL, delim,&saveptr);
-    }*/
-	
 	return 0;
 }
 /* 
@@ -377,10 +346,10 @@ int get_node_by_path(const char *path, uint16_t ino, struct inode *inode) {
 int rufs_mkfs() {
 
 	// Call dev_init() to initialize (Create) Diskfile
-	dev_init(diskfile_path);
-
+	dev_init("/common/home/mc2432/os-project4/project4-release/DISKFILE");
+	printf("here1");
 	// write superblock information
-	superBlock = malloc(sizeof(struct superblock));
+	superBlock = (struct superblock*)malloc(BLOCK_SIZE);
 	superBlock->magic_num = MAGIC_NUM;
 	superBlock->max_dnum = MAX_DNUM;
 	superBlock->max_inum = MAX_INUM;
@@ -393,18 +362,17 @@ int rufs_mkfs() {
 
 		printf("SuperBlock Write Failed");
 	}
+
 	// initialize inode bitmap
 	inodeBitmap = (bitmap_t)malloc(BLOCK_SIZE);
-	memset(inodeBitmap, 0, BLOCK_SIZE);
-
+	set_bitmap(inodeBitmap,0);
 	if(bio_write(superBlock->i_bitmap_blk,inodeBitmap) < 0){
 
 		printf("Inode Bitmap Write Failed");
 	}
 	// initialize data block bitmap
 	dataBlockBitmap = (bitmap_t)malloc(BLOCK_SIZE);
-	memset(dataBlockBitmap, 0, BLOCK_SIZE);
-
+	set_bitmap(dataBlockBitmap,0);
 	if(bio_write(superBlock->d_bitmap_blk,dataBlockBitmap) < 0){
 		printf("Data Block Bitmap Write Failed");
 	}
@@ -412,43 +380,63 @@ int rufs_mkfs() {
 	printf("all writes successes!");
 	// initialize root directory
 	struct inode *root = (struct inode*)malloc(sizeof(struct inode));
+	bio_read(superBlock->i_start_blk, root) ;
 	root->ino = root_ino;
 	root->valid = 1;
 	root->size = BLOCK_SIZE;
 	root->type = DIR_TYPE;
-	root->link = 2;
+	root->link = 0;
 
-	int block = get_avail_blkno();
-	void* dirBlock = malloc(BLOCK_SIZE);
-	bio_read(block,dirBlock);
-	root->direct_ptr[0] = block;
+	root->direct_ptr[0] = superBlock->d_start_blk;
+	root->direct_ptr[1] = 0;
 
+	struct stat *rootStat = (struct stat *)malloc(sizeof(struct stat)) ;
+	rootStat->st_mode = S_IFDIR | 0755 ;
+	rootStat->st_nlink = 2 ;
+	rootStat->st_ino = root->ino ;
+	time(&rootStat->st_mtime) ;
+	rootStat->st_blocks = 1 ;
+	rootStat->st_blksize = BLOCK_SIZE ;
+	rootStat->st_size = 2*sizeof(struct dirent) ;
 
+	root->vstat = *rootStat ;
+	//bio_write(superBlock->i_start_block,root);
+	free(rootStat) ;
 
 //SET UP ROOT DIRECTORY ENTRIES NEEDED HERE
 
-	dir_add(*root, root_ino, ".", 1);
-	dir_add(*root, root_ino, "..", 2);
+	struct dirent* rootEnt = (struct dirent*)malloc(sizeof(struct dirent));
+	rootEnt->ino = root->ino;					
+	rootEnt->valid = 1;					
+	strncpy(rootEnt->name, ".",2);					
+	rootEnt->len = 2;
+
+	struct dirent* parent = rootEnt+1;
+	parent->ino = root->ino;					
+	parent->valid = 1;					
+	strncpy(parent->name, "..",3);							
+	parent->len = 3;	
+
+	bio_write(superBlock->d_start_blk, rootEnt) ;
+	free(rootEnt) ;
+
 
 	// update bitmap information for root directory
-	bitmap_t inodeBit = malloc(BLOCK_SIZE);
-	bitmap_t dbBit = malloc(BLOCK_SIZE);
+	inodeBitmap = (bitmap_t)malloc(BLOCK_SIZE);
+	dataBlockBitmap = (bitmap_t)malloc(BLOCK_SIZE);
 
-	bio_read(superBlock->i_bitmap_blk,inodeBit);
-	bio_read(superBlock->d_bitmap_blk,dbBit);
+	bio_read(superBlock->i_bitmap_blk,inodeBitmap);
+	bio_read(superBlock->d_bitmap_blk,dataBlockBitmap);
 
-	set_bitmap(inodeBit,0);
-	set_bitmap(dbBit,block);
+	set_bitmap(inodeBitmap,0);
+	set_bitmap(dataBlockBitmap,0);
 
-	bio_write(superBlock->i_bitmap_blk,inodeBit);
-	bio_write(superBlock->d_bitmap_blk,dbBit);
+	bio_write(superBlock->i_bitmap_blk,inodeBitmap);
+	bio_write(superBlock->d_bitmap_blk,dataBlockBitmap);
 
-	free(inodeBit);
-	free(dbBit);
 	// update inode for root directory
 	writei(root->ino,root);
 	free(root);
-	free(dirBlock);
 	return 0;
 }
 
@@ -459,8 +447,9 @@ int rufs_mkfs() {
 static void *rufs_init(struct fuse_conn_info *conn) {
 
 	// Step 1a: If disk file is not found, call mkfs
-	int fd = open(diskfile_path, O_RDWR);
-	if(fd < 0){
+	int fd = dev_open("/common/home/mc2432/os-project4/project4-release/DISKFILE");
+	if(fd == -1){
+		printf("in mkfs");
 		rufs_mkfs();
 		return NULL;
 	}
@@ -469,7 +458,8 @@ static void *rufs_init(struct fuse_conn_info *conn) {
   // Step 1b: If disk file is found, just initialize in-memory data structures
   // and read superblock from disk
   //1b: read in all necessary globals
-  struct superblock* superBlock = (struct superBlock*)malloc(BLOCK_SIZE);
+  printf("not in mkfs");
+  superBlock = (struct superblock*)malloc(BLOCK_SIZE);
 		if(bio_read(0,superBlock) != 0){
 			printf("Super Block could not be read!");
 	}
@@ -494,12 +484,12 @@ static int rufs_getattr(const char *path, struct stat *stbuf) {
 
 	// Step 1: call get_node_by_path() to get inode from path
 	struct inode *inode = (struct inode*)malloc(sizeof(struct inode));
-	if(get_node_by_path(path, inode->ino,inode) < 0){
+	if(get_node_by_path(path, 0,inode) < 0){
 		printf("Error: getting path");
 	}
 	// Step 2: fill attribute of file into stbuf from inode
-
-	//	stbuf->st_mode   = S_IFDIR | 0755;
+		*stbuf = inode->vstat ;
+		//stbuf->st_mode   = S_IFDIR | 0755;
 		stbuf->st_nlink  = inode->link;
 		stbuf->st_size   = inode->size;
 		time(&stbuf->st_mtime);
@@ -531,9 +521,9 @@ static int rufs_readdir(const char *path, void *buffer, fuse_fill_dir_t filler, 
 
 	// Step 1: Call get_node_by_path() to get inode from path
 	struct inode* inode = (struct inode*)malloc(BLOCK_SIZE);
-	inode->ino;
+
 	struct dirent* entry = (struct dirent*)malloc(BLOCK_SIZE);
-	get_node_by_path(path,inode->ino,inode);
+	get_node_by_path(path,0,inode);
 	// Step 2: Read directory entries from its data blocks, and copy them to filler
 	for(int b = 0; b<16; b++){
 	if(inode->direct_ptr[b] == 0){
@@ -543,7 +533,7 @@ static int rufs_readdir(const char *path, void *buffer, fuse_fill_dir_t filler, 
 	bio_read(inode->direct_ptr[b],entry);
 	for(int i = 0; i< BLOCK_SIZE/sizeof(struct dirent);i++){
 		if(entry->valid == 1){
-			struct inode* ent_inode = (struct dirent*)malloc(BLOCK_SIZE);
+			struct inode* ent_inode = (struct inode*)malloc(BLOCK_SIZE);
 			readi(entry->ino,ent_inode);
 			filler(buffer,entry->name,&ent_inode->vstat,0);
 		}
@@ -795,11 +785,36 @@ make
 mkdir -p /tmp/mc2432/mountdir
 ./rufs -s /tmp/mc2432/mountdir
 
-cd benchark
+cd benchmark
 make
 ./simple_test
 
 TO UNMOUNT AND BEGIN AGAIN
 fusermount -u /tmp/mc2432/mountdir
+
+NEW NEW
+mkdir /tmp/mc2432/mountdir
+make
+./rufs -s /tmp/mc2432/mountdir
+or
+./rufs -d /tmp/mc2432/mountdir
+cd /tmp/mc2432/mountdir
+
+*/
+/*
+Current issu: when debugging, running into malloc issue at rootStat in rufs_mkfs
+
+for every run
+
+Detach with:
+fusermount -u /tmp/mc2432/mountdir
+
+delete DISKFILE
+
+MAKE DIR
+mkdir /tmp/mc2432/mountdir
+
+ENTER DEBUG
+gdb --args ./rufs -d /tmp/mc2432/mountdir
 
 */

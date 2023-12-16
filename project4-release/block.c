@@ -64,6 +64,7 @@ int bio_read(const int block_num, void *buf) {
     if (retstat <= 0) {
 		memset (buf, 0, BLOCK_SIZE);
 		if (retstat < 0)
+      printf("Block: %d",block_num);
 			perror("block_read failed");
     }
 
