@@ -13,6 +13,9 @@
 - Unfortunately we were unable to fully implement everything due to poor timing, and the scale of this project.
 
 ## Difficulties & Issues
+- **Memory Management**: We faced challenges in efficiently managing memory, especially while handling larger files and directories.  
+- **Concurrency**: Ensuring thread safety and handling concurrent file operations was a complex aspect of the project.  
+- **Debugging**: Debugging was particularly challenging due to the complexity of file system operations and interactions between various components.
 
 ## Collaboration and References
 This project was a collaborative effort among group members Trevor Dovan and Maanav Choudhary.
