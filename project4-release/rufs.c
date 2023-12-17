@@ -22,7 +22,7 @@
 #include "block.h"
 #include "rufs.h"
 
-#define DIR_TYPE 2;
+#define DIR_TYPE 1;
 
 char diskfile_path[PATH_MAX];
 
@@ -346,8 +346,7 @@ int get_node_by_path(const char *path, uint16_t ino, struct inode *inode) {
 int rufs_mkfs() {
 
 	// Call dev_init() to initialize (Create) Diskfile
-	dev_init("/common/home/mc2432/os-project4/project4-release/DISKFILE");
-	printf("here1");
+	dev_init(diskfile_path);
 	// write superblock information
 	superBlock = (struct superblock*)malloc(BLOCK_SIZE);
 	superBlock->magic_num = MAGIC_NUM;
@@ -421,16 +420,6 @@ int rufs_mkfs() {
 	free(rootEnt) ;
 
 
-	// update bitmap information for root directory
-	inodeBitmap = (bitmap_t)malloc(BLOCK_SIZE);
-	dataBlockBitmap = (bitmap_t)malloc(BLOCK_SIZE);
-
-	bio_read(superBlock->i_bitmap_blk,inodeBitmap);
-	bio_read(superBlock->d_bitmap_blk,dataBlockBitmap);
-
-	set_bitmap(inodeBitmap,0);
-	set_bitmap(dataBlockBitmap,0);
-
 	bio_write(superBlock->i_bitmap_blk,inodeBitmap);
 	bio_write(superBlock->d_bitmap_blk,dataBlockBitmap);
 
@@ -447,9 +436,8 @@ int rufs_mkfs() {
 static void *rufs_init(struct fuse_conn_info *conn) {
 
 	// Step 1a: If disk file is not found, call mkfs
-	int fd = dev_open("/common/home/mc2432/os-project4/project4-release/DISKFILE");
+	int fd = dev_open(diskfile_path);
 	if(fd == -1){
-		printf("in mkfs");
 		rufs_mkfs();
 		return NULL;
 	}
@@ -458,7 +446,6 @@ static void *rufs_init(struct fuse_conn_info *conn) {
   // Step 1b: If disk file is found, just initialize in-memory data structures
   // and read superblock from disk
   //1b: read in all necessary globals
-  printf("not in mkfs");
   superBlock = (struct superblock*)malloc(BLOCK_SIZE);
 		if(bio_read(0,superBlock) != 0){
 			printf("Super Block could not be read!");
@@ -475,9 +462,12 @@ static void *rufs_init(struct fuse_conn_info *conn) {
 static void rufs_destroy(void *userdata) {
 
 	// Step 1: De-allocate in-memory data structures
+	free(inodeBitmap);
+	free(dataBlockBitmap);
+	free(superBlock);
 
 	// Step 2: Close diskfile
-
+	dev_close(diskfile_path);
 }
 
 static int rufs_getattr(const char *path, struct stat *stbuf) {
@@ -666,18 +656,32 @@ static int rufs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 static int rufs_open(const char *path, struct fuse_file_info *fi) {
 
 	// Step 1: Call get_node_by_path() to get inode from path
+	struct inode* open = (struct inode*)malloc(sizeof(struct inode));
+	if(get_node_by_path(path,0,open) == 0){
+		if(open->valid){
+			free(open);
+			return 0;
+		}
+	
+	}
 
 	// Step 2: If not find, return -1
-
-	return 0;
+	free(open);
+	return -1;
 }
 
 static int rufs_read(const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi) {
 
 	// Step 1: You could call get_node_by_path() to get inode from path
-
+	struct inode *toRead = (struct inode*)malloc(sizeof(struct inode));
+	if(get_node_by_path(path,0,toRead) == -1){
+		free(toRead);
+		return -1;
+	}
+	int start = offset/BLOCK_SIZE;
 	// Step 2: Based on size and offset, read its data blocks from disk
-
+	for(int i = start; i < 16; i++){
+	}
 	// Step 3: copy the correct amount of data from offset to buffer
 
 	// Note: this function should return the amount of bytes you copied to buffer
